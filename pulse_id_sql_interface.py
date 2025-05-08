@@ -1,625 +1,303 @@
-# import streamlit as st
-# from langchain_community.utilities import SQLDatabase
-# from langchain_community.agent_toolkits import create_sql_agent
-# from langchain_groq import ChatGroq
-# from langchain.agents import AgentType
-
-# # Pre-configured API key
-# API_KEY = "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"
-
-# # Page Configurations
-# st.set_page_config(page_title="Pulse iD - Database Query Interface", page_icon="📊", layout="wide")
-
-# # Title
-# st.title("📊 Pulse iD - SQL Database Query Interface")
-# st.write("### Interact with your merchant database using natural language!")
-
-# # Sidebar for user inputs
-# st.sidebar.header("Settings")
-# db_path = st.sidebar.text_input("Database Path:", "merchant_data.db")
-# model_name = st.sidebar.selectbox("Select Model:", ["llama3-70b-8192", "llama-3.1-70b-versatile"])
-
-# # Initialize components only when DB path is provided
-# if db_path:
-#     try:
-#         # Initialize Groq LLM
-#         llm = ChatGroq(temperature=0, model_name=model_name, api_key=API_KEY)
-
-#         # Initialize SQLDatabase
-#         db = SQLDatabase.from_uri(f"sqlite:///{db_path}", sample_rows_in_table_info=3)
-
-#         # Create SQL Agent
-#         agent_executor = create_sql_agent(
-#             llm=llm, db=db, agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
-#         )
-
-#         st.sidebar.success("✅ Database and LLM Connected Successfully!")
-#     except Exception as e:
-#         st.sidebar.error(f"Error: {str(e)}")
-#         st.stop()
-
-#     # Query input
-#     st.write("#### Ask questions about your database:")
-#     user_query = st.text_area("Enter your query:", placeholder="E.g., How many different restaurants are in the database?")
-
-#     if st.button("Run Query"):
-#         if user_query:
-#             with st.spinner("Running query..."):
-#                 try:
-#                     # Invoke the agent
-#                     result = agent_executor.invoke(user_query)
-#                     st.success("✅ Query Executed Successfully!")
-#                     st.write("**Response:**")
-#                     st.write(result)
-#                 except Exception as e:
-#                     st.error(f"Error executing query: {str(e)}")
-#         else:
-#             st.warning("⚠️ Please enter a query before clicking 'Run Query'.")
-
-#     # Show database info
-#     with st.expander("View Database Table Information"):
-#         st.write("**Available Tables:**")
-#         st.write(db.table_info)
-
-# else:
-#     st.warning("⚠️ Please provide the database path in the sidebar.")
-
-# # Footer
-# st.markdown("---")
-# st.write("Powered by **Pulse iD** | Built with 🐍 Python and Streamlit")
-
-
-
-
-
-
-# import streamlit as st
-# from langchain_community.utilities import SQLDatabase
-# from langchain_community.agent_toolkits import create_sql_agent
-# from langchain_groq import ChatGroq
-# from langchain.agents import AgentType
-# import pandas as pd
-
-# # Pre-configured API key
-# API_KEY = "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"
-
-# # Page Configurations
-# st.set_page_config(page_title="Pulse iD - Database Query Interface", page_icon="📊", layout="wide")
-
-# # Title
-# st.title("📊 Pulse iD - SQL Database Query Interface")
-# st.write("### Interact with your merchant database using natural language!")
-
-# # Sidebar for user inputs
-# st.sidebar.header("Settings")
-# db_path = st.sidebar.text_input("Database Path:", "merchant_data.db")
-# model_name = st.sidebar.selectbox("Select Model:", ["llama3-70b-8192", "llama-3.1-70b-versatile"])
-
-# # Initialize components only when DB path is provided
-# if db_path:
-#     try:
-#         # Initialize Groq LLM
-#         llm = ChatGroq(temperature=0, model_name=model_name, api_key=API_KEY)
-
-#         # Initialize SQLDatabase
-#         db = SQLDatabase.from_uri(f"sqlite:///{db_path}", sample_rows_in_table_info=3)
-
-#         # Create SQL Agent
-#         agent_executor = create_sql_agent(
-#             llm=llm, db=db, agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
-#         )
-
-#         st.sidebar.success("✅ Database and LLM Connected Successfully!")
-#     except Exception as e:
-#         st.sidebar.error(f"Error: {str(e)}")
-#         st.stop()
-
-#     # Query input
-#     st.write("#### Ask questions about your database:")
-#     user_query = st.text_area("Enter your query:", placeholder="E.g., How many different restaurants are in the database?")
-
-#     if st.button("Run Query"):
-#         if user_query:
-#             with st.spinner("Running query..."):
-#                 try:
-#                     # Invoke the agent
-#                     result = agent_executor.invoke(user_query)
-#                     output = result['output'] if isinstance(result, dict) else result
-
-#                     # Check for table-like requests
-#                     if "table" in user_query.lower() or "show" in user_query.lower():
-#                         st.write("**Result in Table Format:**")
-
-#                         try:
-#                             # Attempt to convert output into a DataFrame
-#                             table_data = [row.split(",") for row in output.strip().split("\n") if row]
-#                             df = pd.DataFrame(table_data[1:], columns=table_data[0])
-#                             st.table(df)
-#                         except:
-#                             st.write("Unable to format as a table. Displaying raw output:")
-#                             st.write(output)
-#                     else:
-#                         # Show formatted response
-#                         st.success("✅ Query Executed Successfully!")
-#                         st.write("**Response:**")
-#                         st.write(output)
-#                 except Exception as e:
-#                     st.error(f"Error executing query: {str(e)}")
-#         else:
-#             st.warning("⚠️ Please enter a query before clicking 'Run Query'.")
-
-#     # Show database info
-#     with st.expander("View Database Table Information"):
-#         st.write("**Available Tables:**")
-#         st.write(db.table_info)
-
-# else:
-#     st.warning("⚠️ Please provide the database path in the sidebar.")
-
-# # Footer
-# st.markdown("---")
-# st.write("Powered by **Pulse iD** | Built with 🐍 Python and Streamlit")
-
-
-
-# 
-
-# 
-
-
-# # Import necessary libraries
-# import streamlit as st
-# from langchain_community.utilities import SQLDatabase
-# from langchain_community.agent_toolkits import create_sql_agent
-# from langchain_groq import ChatGroq
-# from langchain.agents import AgentType
-# from langchain_community.llms import Ollama
-# from crewai import Agent, Task, Crew, Process
-# import pandas as pd
-
-# # Pre-configured API key
-# API_KEY = "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"
-
-# # Page Configuration
-# st.set_page_config(page_title="Pulse iD - Database Query & Email Generator", page_icon="📊", layout="wide")
-
-# # Initialize components
-# if 'db' not in st.session_state:
-#     st.session_state.db = None
-# if 'agent_executor' not in st.session_state:
-#     st.session_state.agent_executor = None
-# if 'merchant_data' not in st.session_state:
-#     st.session_state.merchant_data = None
-# if 'raw_output' not in st.session_state:
-#     st.session_state.raw_output = ""
-
-# # Title
-# st.title("📊 Pulse iD - SQL Database Query Interface")
-# st.write("### Interact with your merchant database using natural language!")
-
-# # Sidebar
-# st.sidebar.header("Settings")
-# db_path = st.sidebar.text_input("Database Path:", "merchant_data.db")
-# model_name = st.sidebar.selectbox("Select Model:", ["llama3-70b-8192", "llama-3.1-70b-versatile"])
-
-# # Initialize SQL Database and Agent
-# if db_path and not st.session_state.db:
-#     try:
-#         # Initialize Groq LLM
-#         llm = ChatGroq(temperature=0, model_name=model_name, api_key=API_KEY)
-
-#         # Initialize SQLDatabase
-#         st.session_state.db = SQLDatabase.from_uri(f"sqlite:///{db_path}", sample_rows_in_table_info=3)
-
-#         # Create SQL Agent
-#         st.session_state.agent_executor = create_sql_agent(
-#             llm=llm, db=st.session_state.db, agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
-#         )
-#         st.sidebar.success("✅ Database and LLM Connected Successfully!")
-#     except Exception as e:
-#         st.sidebar.error(f"Error: {str(e)}")
-
-# # Query Input Section
-# if st.session_state.db:
-#     st.write("#### Ask questions about your database:")
-#     user_query = st.text_area("Enter your query:", placeholder="E.g., Show top 10 merchants and their emails.")
-
-#     if st.button("Run Query"):
-#         if user_query:
-#             with st.spinner("Running query..."):
-#                 try:
-#                     # Execute the query using the agent
-#                     result = st.session_state.agent_executor.invoke(user_query)
-#                     st.session_state.raw_output = result['output'] if isinstance(result, dict) else result
-
-#                     # Process raw output using an extraction agent
-#                     extractor_llm = ChatGroq(temperature=0.7, model_name='llama-3.1-70b-versatile', api_key=API_KEY)
-#                     extractor_agent = Agent(
-#                         role="Data Extractor",
-#                         goal="Extract merchants and emails from the raw output.",
-#                         backstory="You are an expert in extracting structured information from text.",
-#                         llm=extractor_llm
-#                     )
-
-#                     extract_task = Task(
-#                         description=f"Extract a list of 'merchants' and their 'emails' from the following text:\n\n{st.session_state.raw_output}",
-#                         agent=extractor_agent
-#                     )
-
-#                     # Crew execution for extraction
-#                     extraction_crew = Crew(agents=[extractor_agent], tasks=[extract_task], process=Process.sequential)
-#                     extraction_results = extraction_crew.kickoff()
-#                     structured_output = extraction_results if extraction_results else ""
-#                     st.session_state.merchant_data = structured_output
-
-#                     # Display results
-#                     st.write("**Extracted Merchants:**")
-#                     st.write(st.session_state.raw_output)
-#                     st.write(extraction_results)
-
-#                 except Exception as e:
-#                     st.error(f"Error executing query: {str(e)}")
-#         else:
-#             st.warning("⚠️ Please enter a query before clicking 'Run Query'.")
-
-#     # Email Generator Button
-#     if st.session_state.merchant_data and st.button("Generate Emails"):
-#         print('check jayan',st.session_state.merchant_data)
-#         with st.spinner("Generating emails..."):
-#             try:
-#                 # Define email generation agent
-#                 llm_email = ChatGroq(temperature=0.2, model_name='llama-3.1-70b-versatile', api_key=API_KEY)
-#                 email_agent = Agent(
-#                     role="Email Content Generator",
-#                     goal="Generate personalized marketing emails for merchants.",
-#                     backstory="You are a marketing expert of Pulse iD finetech company skilled in crafting professional and engaging emails for merchants.",
-#                     verbose=True,
-#                     allow_delegation=False,
-#                     llm=llm_email
-#                 )
-
-#                 # Email generation task using extracted results
-#                 task = Task(
-#                     description=f"Generate professional marketing emails for the following merchants and their emails to pitch them: {st.session_state.merchant_data}",
-#                     agent=email_agent,
-#                     expected_output="Marketing emails for each selected merchant, tailored to their business details."
-#                 )
-
-#                 # Crew execution
-#                 crew = Crew(agents=[email_agent], tasks=[task], process=Process.sequential)
-#                 email_results = crew.kickoff()
-
-#                 # Display results
-#                 st.write("### Generated Emails:")
-#                 st.write(email_results)
-
-#             except Exception as e:
-#                 st.error(f"Error generating emails: {str(e)}")
-
-# # Footer
-# st.markdown("---")
-# st.write("Powered by **Pulse iD** | Built with 🐍 Python and Streamlit")
-
-
-
-# # Import necessary libraries
-# import streamlit as st
-# from langchain_community.utilities import SQLDatabase
-# from langchain_community.agent_toolkits import create_sql_agent
-# from langchain_groq import ChatGroq
-# from langchain.agents import AgentType
-# from langchain_community.llms import Ollama
-# from crewai import Agent, Task, Crew, Process
-# import pandas as pd
-
-# # Pre-configured API key
-# API_KEY = "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"
-
-# # Page Configuration
-# st.set_page_config(page_title="Pulse iD - Database Query & Email Generator", page_icon="📊", layout="wide")
-
-# # Initialize session state
-# if 'db' not in st.session_state:
-#     st.session_state.db = None
-# if 'agent_executor' not in st.session_state:
-#     st.session_state.agent_executor = None
-# if 'merchant_data' not in st.session_state:
-#     st.session_state.merchant_data = None
-# if 'raw_output' not in st.session_state:
-#     st.session_state.raw_output = ""
-# if 'extraction_results' not in st.session_state:
-#     st.session_state.extraction_results = None
-# if 'email_results' not in st.session_state:
-#     st.session_state.email_results = None
-
-# # Title and Logo
-# st.image("logo.png", width=150)  # Ensure you have your logo in the working directory
-# st.title("📊 Pulse iD - SQL Database Query Interface")
-# st.write("### Interact with your merchant database using natural language!")
-
-# # Sidebar
-# st.sidebar.header("Settings")
-# db_path = st.sidebar.text_input("Database Path:", "merchant_data.db")
-# model_name = st.sidebar.selectbox("Select Model:", ["llama3-70b-8192", "llama-3.1-70b-versatile"])
-
-# # Initialize SQL Database and Agent
-# if db_path and not st.session_state.db:
-#     try:
-#         # Initialize Groq LLM
-#         llm = ChatGroq(temperature=0, model_name=model_name, api_key=API_KEY)
-
-#         # Initialize SQLDatabase
-#         st.session_state.db = SQLDatabase.from_uri(f"sqlite:///{db_path}", sample_rows_in_table_info=3)
-
-#         # Create SQL Agent
-#         st.session_state.agent_executor = create_sql_agent(
-#             llm=llm, db=st.session_state.db, agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
-#         )
-#         st.sidebar.success("✅ Database and LLM Connected Successfully!")
-#     except Exception as e:
-#         st.sidebar.error(f"Error: {str(e)}")
-
-# # Query Input Section
-# if st.session_state.db:
-#     st.write("#### Ask questions about your database:")
-#     user_query = st.text_area("Enter your query:", placeholder="E.g., Show top 10 merchants and their emails.")
-
-#     if st.button("Run Query"):
-#         if user_query:
-#             with st.spinner("Running query..."):
-#                 try:
-#                     # Execute the query using the agent
-#                     result = st.session_state.agent_executor.invoke(user_query)
-#                     st.session_state.raw_output = result['output'] if isinstance(result, dict) else result
-
-#                     # Process raw output using an extraction agent
-#                     extractor_llm = ChatGroq(temperature=0.7, model_name='llama-3.1-70b-versatile', api_key=API_KEY)
-#                     extractor_agent = Agent(
-#                         role="Data Extractor",
-#                         goal="Extract merchants and emails from the raw output.",
-#                         backstory="You are an expert in extracting structured information from text.",
-#                         llm=extractor_llm
-#                     )
-
-#                     extract_task = Task(
-#                         description=f"Extract a list of 'merchants' and their 'emails' from the following text:\n\n{st.session_state.raw_output}",
-#                         agent=extractor_agent
-#                     )
-
-#                     # Crew execution for extraction
-#                     extraction_crew = Crew(agents=[extractor_agent], tasks=[extract_task], process=Process.sequential)
-#                     extraction_results = extraction_crew.kickoff()
-#                     st.session_state.extraction_results = extraction_results if extraction_results else ""
-#                     st.session_state.merchant_data = st.session_state.extraction_results
-
-#                     # # Display results
-#                     # st.write("**Query Results:**")
-#                     # st.write(st.session_state.raw_output)
-#                     # st.write("**Extracted Merchants:**")
-#                     # st.write(st.session_state.extraction_results)
-
-#                 except Exception as e:
-#                     st.error(f"Error executing query: {str(e)}")
-#         else:
-#             st.warning("⚠️ Please enter a query before clicking 'Run Query'.")
-
-#     # Show previous query results even if Generate Emails is clicked
-#     if st.session_state.raw_output:
-#         st.write("### Query Results:")
-#         st.write(st.session_state.raw_output)
-
-#     if st.session_state.extraction_results:
-#         st.write("### Extracted Merchants:")
-#         st.write(st.session_state.extraction_results)
-
-#     # Email Generator Button
-#     if st.session_state.merchant_data and st.button("Generate Emails"):
-#         with st.spinner("Generating emails..."):
-#             try:
-#                 # Define email generation agent
-#                 llm_email = ChatGroq(temperature=0.2, model_name='llama-3.1-70b-versatile', api_key=API_KEY)
-#                 email_agent = Agent(
-#                     role="Email Content Generator",
-#                     goal="Generate personalized marketing emails for merchants.",
-#                     backstory="You are a marketing expert of Pulse iD fintech company skilled in crafting professional and engaging emails for merchants.",
-#                     verbose=True,
-#                     allow_delegation=False,
-#                     llm=llm_email
-#                 )
-
-#                 # Email generation task using extracted results
-#                 task = Task(
-#                     description=f"Generate professional marketing emails for the following merchants and their emails to pitch them: {st.session_state.merchant_data}",
-#                     agent=email_agent,
-#                     expected_output="Marketing emails for each selected merchant, tailored to their business details."
-#                 )
-
-#                 # Crew execution
-#                 crew = Crew(agents=[email_agent], tasks=[task], process=Process.sequential)
-#                 email_results = crew.kickoff()
-#                 st.session_state.email_results = email_results
-
-#                 # Display results
-#                 st.write("### Generated Emails:")
-#                 st.write(email_results)
-
-#             except Exception as e:
-#                 st.error(f"Error generating emails: {str(e)}")
-
-#     # # Display previously generated emails
-#     # if st.session_state.email_results:
-#     #     st.write("### Previously Generated Emails:")
-#     #     st.write(st.session_state.email_results)
-
-# # Footer
-# st.markdown("---")
-# st.write("Powered by **Pulse iD** | Built with 🐍 Python and Streamlit")
-
-
-
-
-# Import necessary libraries
 import streamlit as st
-from langchain_community.utilities import SQLDatabase
-from langchain_community.agent_toolkits import create_sql_agent
-from langchain_groq import ChatGroq
-from langchain.agents import AgentType
-from langchain_community.llms import Ollama
-from crewai import Agent, Task, Crew, Process
-import pandas as pd
+import openai
+import json
+import re
+from datetime import datetime, timedelta
+import requests
+from typing import List, Dict
 
-# Page Configuration
-st.set_page_config(
-    page_title="Pulse iD - Database Query & Email Generator",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- Initialize Session State ---
+if 'offer_params' not in st.session_state:
+    st.session_state.offer_params = None
+if 'offer_created' not in st.session_state:
+    st.session_state.offer_created = False
+if 'adjusted_params' not in st.session_state:
+    st.session_state.adjusted_params = None
+if 'lms_credentials' not in st.session_state:
+    st.session_state.lms_credentials = {
+        'email': st.secrets.get("LMS_EMAIL", ""),
+        'password': st.secrets.get("LMS_PASSWORD", ""),
+        'app': 'lms'
+    }
+if 'pending_offers' not in st.session_state:
+    st.session_state.pending_offers = None
+if 'filtered_offers' not in st.session_state:
+    st.session_state.filtered_offers = None
 
-# Initialize session state
-if 'db' not in st.session_state:
-    st.session_state.db = None
-if 'agent_executor' not in st.session_state:
-    st.session_state.agent_executor = None
-if 'merchant_data' not in st.session_state:
-    st.session_state.merchant_data = None
-if 'raw_output' not in st.session_state:
-    st.session_state.raw_output = ""
-if 'extraction_results' not in st.session_state:
-    st.session_state.extraction_results = None
-if 'email_results' not in st.session_state:
-    st.session_state.email_results = None
-if 'api_key' not in st.session_state:
-    st.session_state.api_key = ""
+# --- Helper Functions ---
+def format_currency(amount):
+    return f"${amount:.2f}"
 
-# Header Section with Title and Logo
-st.image("logo.png", width=150)  # Ensure you have your logo in the working directory
-st.markdown(
-    "<h1 style='text-align: center; color: #4CAF50;'>📊 Pulse iD - SQL Database Query Interface</h1>",
-    unsafe_allow_html=True
-)
-st.markdown(
-    "<h4 style='text-align: center; color: #555;'>Interact with your merchant database and generate emails with ease!</h4>",
-    unsafe_allow_html=True
-)
+def authenticate_user(email: str, password: str, app: str):
+    url = 'https://lmsdev.pulseid.com/1.0/auth/login-v2'
+    headers = {'Content-Type': 'application/json'}
+    payload = {'email': email, 'password': password, 'app': app}
+    response = requests.post(url, headers=headers, json=payload)
+    if not response.ok:
+        raise Exception('Authentication failed')
+    auth_data = response.json()
+    return {
+        'permissionToken': auth_data['data']['auth'][0]['permissionToken'],
+        'authToken': auth_data['data']['auth'][0]['authToken']
+    }
 
-# Sidebar Configuration
-st.sidebar.header("Settings")
+def get_pending_offers(permission_token: str, auth_token: str):
+    url = 'https://lmsdev-marketplace-api.pulseid.com/offer/pending-review'
+    headers = {
+        'x-pulse-current-client': '315',
+        'x-pulse-token': permission_token,
+        'Authorization': f'Bearer {auth_token}',
+        'Content-Type': 'application/json'
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception('Failed to retrieve offers')
+    return response.json()
 
-def get_api_key():
-    """Function to get API Key from user input"""
-    return st.sidebar.text_input("Enter Your API Key:", type="password")
-
-# Get API Key
-api_key = get_api_key()
-if api_key:
-    st.session_state.api_key = api_key
-
-# Database Path Input
-db_path = st.sidebar.text_input("Database Path:", "merchant_data.db")
-model_name = st.sidebar.selectbox("Select Model:", ["llama3-70b-8192", "llama-3.1-70b-versatile"])
-
-# Initialize SQL Database and Agent
-if db_path and api_key and not st.session_state.db:
+def fetch_pending_offers():
     try:
-        # Initialize Groq LLM
-        llm = ChatGroq(temperature=0, model_name=model_name, api_key=st.session_state.api_key)
-
-        # Initialize SQLDatabase
-        st.session_state.db = SQLDatabase.from_uri(f"sqlite:///{db_path}", sample_rows_in_table_info=3)
-
-        # Create SQL Agent
-        st.session_state.agent_executor = create_sql_agent(
-            llm=llm, db=st.session_state.db, agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION, verbose=True
+        auth = authenticate_user(
+            email=st.session_state.lms_credentials['email'],
+            password=st.session_state.lms_credentials['password'],
+            app=st.session_state.lms_credentials['app']
         )
-        st.sidebar.success("✅ Database and LLM Connected Successfully!")
+        offers = get_pending_offers(auth['permissionToken'], auth['authToken'])
+        st.session_state.pending_offers = offers.get('offers', [])
+        return offers
     except Exception as e:
-        st.sidebar.error(f"Error: {str(e)}")
+        st.error(f"Failed to fetch offers: {str(e)}")
+        return None
 
-# Query Input Section
-if st.session_state.db:
-    st.markdown("#### Ask questions about your database:", unsafe_allow_html=True)
-    user_query = st.text_area("Enter your query:", placeholder="E.g., Show top 10 merchants and their emails.")
+def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
+    """Use LLM to filter offers based on natural language prompt"""
+    try:
+        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        
+        # Prepare offers data for LLM
+        offers_str = "\n".join([
+            f"ID: {offer.get('id')}, "
+            f"Title: {offer.get('title')}, "
+            f"Merchant: {offer.get('merchants', [{}])[0].get('name', 'N/A')}, "
+            f"Category: {offer.get('merchants', [{}])[0].get('category', 'N/A')}, "
+            f"Expires: {offer.get('duration', {}).get('to', 'N/A')}, "
+            f"Budget: {offer.get('budget', 'N/A')}"
+            for offer in offers
+        ])
+        
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"""Analyze these offers and return ONLY a JSON list of offer IDs that match this query: '{prompt}'.
+                    Available offers:\n{offers_str}\n
+                    Return format: {{"matching_ids": [id1, id2, ...]}}"""
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.1,
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        return [offer for offer in offers if offer.get('id') in result.get('matching_ids', [])]
+    except Exception as e:
+        st.error(f"LLM filtering error: {str(e)}")
+        return offers
 
-    if st.button("Run Query", key="run_query"):
-        if user_query:
-            with st.spinner("Running query..."):
+# --- UI Components ---
+def offer_card(offer: Dict):
+    merchant = offer.get('merchants', [{}])[0]
+    image_url = (
+        offer.get('offerLogo') or 
+        merchant.get('profilePicture') or 
+        merchant.get('categoryLogo') or 
+        "https://via.placeholder.com/150?text=No+Image"
+    )
+    
+    # Calculate days until expiration
+    expiry_date = offer.get('duration', {}).get('to')
+    days_left = "N/A"
+    if expiry_date and expiry_date != "No end date":
+        expiry = datetime.strptime(expiry_date, "%Y-%m-%d %H:%M")
+        days_left = max(0, (expiry - datetime.now()).days)
+    
+    with st.container():
+        cols = st.columns([1, 3])
+        with cols[0]:
+            st.image(image_url, use_column_width=True)
+        with cols[1]:
+            st.subheader(offer.get('title', 'Untitled Offer'))
+            st.markdown(f"""
+            **Merchant:** {merchant.get('name', 'N/A')}  
+            **Category:** {merchant.get('category', 'N/A')}  
+            **Value:** {offer.get('currency', {}).get('symbol', '$')}{offer.get('budget', 'N/A')}  
+            **Expires in:** {days_left} days  
+            **Status:** {offer.get('status', 'N/A').replace('-', ' ').title()}
+            """)
+            
+            if st.button("View Details", key=f"details_{offer.get('id')}"):
+                st.json(offer)
+        st.divider()
+
+# --- Main UI ---
+st.set_page_config(page_title="Offer Management Dashboard", page_icon="🎯", layout="wide")
+
+# Get API keys
+if not st.secrets.get("OPENAI_API_KEY"):
+    st.error("OpenAI API key not configured")
+    st.stop()
+
+# Custom CSS for tabs
+st.markdown("""
+<style>
+    .stTabs [data-baseweb="tab-list"] {
+        justify-content: center;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 1rem 2rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    .offer-card {
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Main tabs
+tab1, tab2 = st.tabs(["✨ Create Offer", "📋 View Offers"])
+
+with tab1:
+    st.title("AI-Powered Offer Creation")
+    col1, col2 = st.columns([1, 1], gap="large")
+    
+    with col1:
+        user_prompt = st.text_area(
+            "Describe your offer:",
+            height=150,
+            placeholder="E.g., 'Give $20 cashback for first 10 customers spending $500+ valid for 7 days'",
+            help="The AI will extract parameters from your description"
+        )
+        
+        if st.button("Generate Offer", type="primary"):
+            with st.spinner("Creating your offer..."):
                 try:
-                    # Execute the query using the agent
-                    result = st.session_state.agent_executor.invoke(user_query)
-                    st.session_state.raw_output = result['output'] if isinstance(result, dict) else result
-
-                    # Process raw output using an extraction agent
-                    extractor_llm = ChatGroq(temperature=0.7, model_name='llama-3.1-70b-versatile', api_key=st.session_state.api_key)
-                    extractor_agent = Agent(
-                        role="Data Extractor",
-                        goal="Extract merchants and emails from the raw output.",
-                        backstory="You are an expert in extracting structured information from text.",
-                        llm=extractor_llm
+                    client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+                    response = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": """Extract offer details from user description. Return JSON with:
+                                {
+                                    "offer_type": "cashback/discount/free_shipping",
+                                    "value": 20,
+                                    "min_spend": 500,
+                                    "duration_days": 7,
+                                    "offer_name": "Creative Name",
+                                    "max_redemptions": 10,
+                                    "description": "Marketing text"
+                                }"""
+                            },
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        temperature=0.2,
                     )
-
-                    extract_task = Task(
-                        description=f"Extract a list of 'merchants' and their 'emails' from the following text:\n\n{st.session_state.raw_output}",
-                        agent=extractor_agent
-                    )
-
-                    # Crew execution for extraction
-                    extraction_crew = Crew(agents=[extractor_agent], tasks=[extract_task], process=Process.sequential)
-                    extraction_results = extraction_crew.kickoff()
-                    st.session_state.extraction_results = extraction_results if extraction_results else ""
-                    st.session_state.merchant_data = st.session_state.extraction_results
-
+                    
+                    content = response.choices[0].message.content
+                    content = re.sub(r'```json\n?(.*?)\n?```', r'\1', content, flags=re.DOTALL)
+                    st.session_state.offer_params = json.loads(content)
+                    st.session_state.adjusted_params = st.session_state.offer_params.copy()
+                    st.session_state.offer_created = True
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"Error executing query: {str(e)}")
+                    st.error(f"Error generating offer: {str(e)}")
+    
+    with col2:
+        if st.session_state.offer_created and st.session_state.adjusted_params:
+            params = st.session_state.adjusted_params
+            st.subheader("🎯 Offer Preview")
+            
+            end_date = datetime.now() + timedelta(days=params.get("duration_days", 7))
+            value_display = f"{params['value']}%" if params.get("value_type") == "percentage" else format_currency(params['value'])
+            
+            with st.container():
+                st.markdown(f"""
+                **✨ {params.get('offer_name', 'Special Offer')}**  
+                💵 **{value_display}** {params.get('offer_type')}  
+                🛒 Min. spend: **{format_currency(params.get('min_spend', 0))}**  
+                ⏳ Valid until: **{end_date.strftime('%b %d, %Y')}**  
+                👥 Max redemptions: **{params.get('max_redemptions', 'Unlimited')}**
+                """)
+                
+                if st.button("Publish Offer", type="primary"):
+                    with st.spinner("Publishing..."):
+                        # Add your publish logic here
+                        st.success("Offer published successfully!")
+
+with tab2:
+    st.title("Smart Offer Explorer")
+    st.caption("View, search, and analyze your offers using natural language")
+    
+    # Two-column layout
+    col1, col2 = st.columns([1, 3], gap="large")
+    
+    with col1:
+        st.subheader("🔍 Smart Search")
+        search_query = st.text_input(
+            "Ask about offers:",
+            placeholder="E.g., 'Show food offers expiring soon', 'Find high-value cashback deals'",
+            help="The AI will analyze your offers and find matches"
+        )
+        
+        if st.button("Search Offers", type="primary"):
+            if st.session_state.pending_offers and search_query:
+                with st.spinner("Analyzing offers..."):
+                    st.session_state.filtered_offers = filter_offers_with_llm(
+                        search_query, 
+                        st.session_state.pending_offers
+                    )
+            elif not st.session_state.pending_offers:
+                st.warning("No offers loaded. Refresh first.")
+        
+        st.divider()
+        
+        if st.button("🔄 Refresh All Offers", type="secondary"):
+            with st.spinner("Loading offers..."):
+                fetch_pending_offers()
+                st.session_state.filtered_offers = None
+                st.rerun()
+        
+        st.markdown("**Quick Filters:**")
+        if st.button("Expiring Soon"):
+            st.session_state.filtered_offers = [
+                o for o in st.session_state.pending_offers 
+                if o.get('duration', {}).get('to') and 
+                (datetime.strptime(o['duration']['to'], "%Y-%m-%d %H:%M") - datetime.now()).days <= 7
+            ]
+        
+        if st.button("High Value (>$50)"):
+            st.session_state.filtered_offers = [
+                o for o in st.session_state.pending_offers 
+                if float(o.get('budget', 0)) > 50
+            ]
+    
+    with col2:
+        offers_to_display = st.session_state.filtered_offers or st.session_state.pending_offers
+        
+        if offers_to_display:
+            st.subheader(f"📋 Offers ({len(offers_to_display)})")
+            
+            # Sort by expiration date
+            offers_to_display.sort(key=lambda x: (
+                datetime.strptime(x.get('duration', {}).get('to', '9999-12-31'), 
+                "%Y-%m-%d %H:%M"
+            ) if x.get('duration', {}).get('to') else '9999-12-31')
+            
+            for offer in offers_to_display:
+                offer_card(offer)
         else:
-            st.warning("⚠️ Please enter a query before clicking 'Run Query'.")
-
-    # Show previous query results even if Generate Emails is clicked
-    if st.session_state.raw_output:
-        st.markdown("### Query Results:", unsafe_allow_html=True)
-        st.write(st.session_state.raw_output)
-
-    if st.session_state.extraction_results:
-        st.markdown("### Extracted Merchants:", unsafe_allow_html=True)
-        st.write(st.session_state.extraction_results)
-
-    # Email Generator Button
-    if st.session_state.merchant_data and st.button("Generate Emails"):
-        with st.spinner("Generating emails..."):
-            try:
-                # Define email generation agent
-                llm_email = ChatGroq(temperature=0.2, model_name='llama-3.1-70b-versatile', api_key=st.session_state.api_key)
-                email_agent = Agent(
-                    role="Email Content Generator",
-                    goal="Generate personalized marketing emails for merchants.",
-                    backstory="You are a marketing expert named 'Sumit Uttamchandani' of Pulse iD fintech company skilled in crafting professional and engaging emails for merchants.",
-                    verbose=True,
-                    allow_delegation=False,
-                    llm=llm_email
-                )
-
-                # Email generation task using extracted results
-                task = Task(
-                    description=f"Generate professional marketing emails for the following merchants and their emails to pitch them: {st.session_state.merchant_data}",
-                    agent=email_agent,
-                    expected_output="Marketing emails for each selected merchant, tailored to their business details."
-                )
-
-                # Crew execution
-                crew = Crew(agents=[email_agent], tasks=[task], process=Process.sequential)
-                email_results = crew.kickoff()
-                st.session_state.email_results = email_results
-
-                # Display results
-                st.markdown("### Generated Emails:", unsafe_allow_html=True)
-                st.write(email_results)
-
-            except Exception as e:
-                st.error(f"Error generating emails: {str(e)}")
-
-# Footer Section
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; font-size: 14px;'>Powered by <strong>Pulse iD</strong> | Built with 🐍 Python and Streamlit</div>",
-    unsafe_allow_html=True
-)
+            st.info("No offers found. Refresh offers or try a different search.")
