@@ -285,7 +285,7 @@ with tab2:
                 if float(o.get('budget', 0)) > 50
             ]
     
-   with col2:
+    with col2:
         offers_to_display = st.session_state.filtered_offers or st.session_state.pending_offers
         
         if offers_to_display:
