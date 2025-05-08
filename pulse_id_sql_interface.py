@@ -286,12 +286,11 @@ with tab2:
             ]
     
    with col2:
-       
         offers_to_display = st.session_state.filtered_offers or st.session_state.pending_offers
-    
+        
         if offers_to_display:
             st.subheader(f"📋 Offers ({len(offers_to_display)})")
-        
+            
             # Improved sorting with proper error handling
             def get_sort_key(offer):
                 expiry_date = offer.get('duration', {}).get('to')
@@ -301,9 +300,9 @@ with tab2:
                     return datetime.max  # Far future date for offers with no expiry
                 except ValueError:
                     return datetime.max  # Fallback for invalid dates
-        
+            
             offers_to_display.sort(key=get_sort_key)
-        
+            
             for offer in offers_to_display:
                 offer_card(offer)
         else:
