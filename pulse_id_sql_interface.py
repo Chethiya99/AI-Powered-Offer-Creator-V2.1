@@ -293,7 +293,7 @@ with tab2:
             
             # Sort by expiration date
             offers_to_display.sort(key=lambda x: (
-                datetime.strptime(x.get('duration', {}).get('to', '9999-12-31'), 
+                datetime.strptime(x.get('duration', {}).get('to', '9999-12-31')), 
                 "%Y-%m-%d %H:%M"
             ) if x.get('duration', {}).get('to') else '9999-12-31')
             
