@@ -86,7 +86,7 @@ def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
         ])
         
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4",
             messages=[
                 {
                     "role": "system",
