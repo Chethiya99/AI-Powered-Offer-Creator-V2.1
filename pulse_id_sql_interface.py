@@ -26,7 +26,7 @@ if 'filtered_offers' not in st.session_state:
 
 # --- Helper Functions ---
 def format_currency(amount):
-    return f"${amount:.2f}"
+    return f"\\${amount:.2f}"  # Escaped for Markdown
 
 def authenticate_user(email: str, password: str, app: str):
     url = 'https://lmsdev.pulseid.com/1.0/auth/login-v2'
@@ -80,8 +80,9 @@ def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
             f"Merchant: {offer.get('merchants', [{}])[0].get('name', 'N/A')}, "
             f"Category: {offer.get('merchants', [{}])[0].get('category', 'N/A')}, "
             f"Expires: {offer.get('duration', {}).get('to', 'N/A')}, "
-            f"Budget: {offer.get('budget', 'N/A')}"
-            for offer in offers
+            f"Budget: {offer.get('budget', 'N/A')}, "
+            f"Type: {offer.get('rewardType', 'N/A')}"
+            for offer in offers[:100]  # Limit to 100 offers for cost/performance
         ])
         
         response = client.chat.completions.create(
@@ -89,8 +90,12 @@ def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
             messages=[
                 {
                     "role": "system",
-                    "content": f"""Analyze these offers and return ONLY a JSON list of offer IDs that match this query: '{prompt}'.
+                    "content": f"""Analyze these offers and return ONLY a JSON list of offer IDs that match the user's query.
                     Available offers:\n{offers_str}\n
+                    Important:
+                    - Understand categories (e.g., 'kids' = toys/baby items)
+                    - Recognize dates in any format
+                    - Handle currency values flexibly
                     Return format: {{"matching_ids": [id1, id2, ...]}}"""
                 },
                 {"role": "user", "content": prompt},
@@ -118,8 +123,11 @@ def offer_card(offer: Dict):
     expiry_date = offer.get('duration', {}).get('to')
     days_left = "N/A"
     if expiry_date and expiry_date != "No end date":
-        expiry = datetime.strptime(expiry_date, "%Y-%m-%d %H:%M")
-        days_left = max(0, (expiry - datetime.now()).days)
+        try:
+            expiry = datetime.strptime(expiry_date, "%Y-%m-%d %H:%M")
+            days_left = max(0, (expiry - datetime.now()).days)
+        except ValueError:
+            days_left = "N/A"
     
     with st.container():
         cols = st.columns([1, 3])
@@ -130,7 +138,7 @@ def offer_card(offer: Dict):
             st.markdown(f"""
             **Merchant:** {merchant.get('name', 'N/A')}  
             **Category:** {merchant.get('category', 'N/A')}  
-            **Value:** {offer.get('currency', {}).get('symbol', '$')}{offer.get('budget', 'N/A')}  
+            **Value:** {offer.get('currency', {}).get('symbol', '\\$')}{offer.get('budget', 'N/A')}  
             **Expires in:** {days_left} days  
             **Status:** {offer.get('status', 'N/A').replace('-', ' ').title()}
             """)
@@ -164,6 +172,10 @@ st.markdown("""
         padding: 1.5rem;
         margin-bottom: 1.5rem;
     }
+    .wide-button {
+        width: 100% !important;
+        margin-top: 0.5rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -178,8 +190,9 @@ with tab1:
         user_prompt = st.text_area(
             "Describe your offer:",
             height=150,
-            placeholder="E.g., 'Give $20 cashback for first 10 customers spending $500+ valid for 7 days'",
-            help="The AI will extract parameters from your description"
+            placeholder="E.g., 'Give \\$20 cashback for first 10 customers spending \\$500+ valid for 7 days' "
+                        "or 'Maybe a 15% discount on baby items worth \\$100, limited to first 50 customers until Oct 1 2025'",
+            help="The AI understands complex descriptions with dates, amounts, and limits"
         )
         
         if st.button("Generate Offer", type="primary"):
@@ -191,15 +204,22 @@ with tab1:
                         messages=[
                             {
                                 "role": "system",
-                                "content": """Extract offer details from user description. Return JSON with:
+                                "content": """Extract offer details from user description with high accuracy:
+                                - Recognize dollar amounts (\\$20 or 20 dollars)
+                                - Understand percentages (15% or 15 percent)
+                                - Parse dates in any format (Oct 1 2025, 10/01/25, etc.)
+                                - Identify target audiences (babies, kids, students)
+                                Return JSON with:
                                 {
                                     "offer_type": "cashback/discount/free_shipping",
-                                    "value": 20,
-                                    "min_spend": 500,
-                                    "duration_days": 7,
-                                    "offer_name": "Creative Name",
-                                    "max_redemptions": 10,
-                                    "description": "Marketing text"
+                                    "value": 20 (or 15 for %),
+                                    "value_type": "fixed/percentage",
+                                    "min_spend": 100,
+                                    "duration_days": (calculated from end date),
+                                    "offer_name": "Creative Name Based on Details",
+                                    "max_redemptions": 50,
+                                    "target_audience": "babies/kids/etc",
+                                    "description": "Generated marketing text"
                                 }"""
                             },
                             {"role": "user", "content": user_prompt},
@@ -221,16 +241,22 @@ with tab1:
             params = st.session_state.adjusted_params
             st.subheader("🎯 Offer Preview")
             
-            end_date = datetime.now() + timedelta(days=params.get("duration_days", 7))
+            # Handle both fixed end dates and duration_days
+            if 'end_date' in params:
+                end_date = datetime.strptime(params['end_date'], "%Y-%m-%d")
+            else:
+                end_date = datetime.now() + timedelta(days=params.get("duration_days", 7))
+            
             value_display = f"{params['value']}%" if params.get("value_type") == "percentage" else format_currency(params['value'])
             
             with st.container():
                 st.markdown(f"""
                 **✨ {params.get('offer_name', 'Special Offer')}**  
-                💵 **{value_display}** {params.get('offer_type')}  
+                💵 **{value_display}** {params.get('offer_type', 'offer').replace('_', ' ').title()}  
                 🛒 Min. spend: **{format_currency(params.get('min_spend', 0))}**  
                 ⏳ Valid until: **{end_date.strftime('%b %d, %Y')}**  
-                👥 Max redemptions: **{params.get('max_redemptions', 'Unlimited')}**
+                👥 Max redemptions: **{params.get('max_redemptions', 'Unlimited')}**  
+                🎯 Audience: **{params.get('target_audience', 'All customers').title()}**
                 """)
                 
                 if st.button("Publish Offer", type="primary"):
@@ -249,40 +275,46 @@ with tab2:
         st.subheader("🔍 Smart Search")
         search_query = st.text_input(
             "Ask about offers:",
-            placeholder="E.g., 'Show food offers expiring soon', 'Find high-value cashback deals'",
-            help="The AI will analyze your offers and find matches"
+            placeholder="E.g., 'Show food offers expiring soon', 'Find kids-related deals under \\$30'",
+            help="The AI understands categories, prices, and dates in natural language"
         )
         
-        if st.button("Search Offers", type="primary"):
-            if st.session_state.pending_offers and search_query:
-                with st.spinner("Analyzing offers..."):
-                    st.session_state.filtered_offers = filter_offers_with_llm(
-                        search_query, 
-                        st.session_state.pending_offers
-                    )
-            elif not st.session_state.pending_offers:
-                st.warning("No offers loaded. Refresh first.")
+        search_cols = st.columns([1, 1])
+        with search_cols[0]:
+            if st.button("Search Offers", type="primary"):
+                if st.session_state.pending_offers and search_query:
+                    with st.spinner("Analyzing offers..."):
+                        st.session_state.filtered_offers = filter_offers_with_llm(
+                            search_query, 
+                            st.session_state.pending_offers
+                        )
+                elif not st.session_state.pending_offers:
+                    st.warning("No offers loaded. Refresh first.")
+        
+        with search_cols[1]:
+            if st.button("Show All Offers", type="secondary", key="show_all"):
+                st.session_state.filtered_offers = None
         
         st.divider()
         
-        if st.button("🔄 Refresh All Offers", type="secondary"):
+        if st.button("🔄 Refresh All Offers", type="secondary", class_="wide-button"):
             with st.spinner("Loading offers..."):
                 fetch_pending_offers()
                 st.session_state.filtered_offers = None
                 st.rerun()
         
         st.markdown("**Quick Filters:**")
-        if st.button("Expiring Soon"):
+        if st.button("Expiring Soon (≤7 days)"):
             st.session_state.filtered_offers = [
-                o for o in st.session_state.pending_offers 
+                o for o in (st.session_state.pending_offers or []) 
                 if o.get('duration', {}).get('to') and 
                 (datetime.strptime(o['duration']['to'], "%Y-%m-%d %H:%M") - datetime.now()).days <= 7
             ]
         
-        if st.button("High Value (>$50)"):
+        if st.button("High Value (>\\$50)"):
             st.session_state.filtered_offers = [
-                o for o in st.session_state.pending_offers 
-                if float(o.get('budget', 0)) > 50
+                o for o in (st.session_state.pending_offers or []) 
+                if o.get('budget') and float(str(o['budget']).replace(',', '')) > 50
             ]
     
     with col2:
