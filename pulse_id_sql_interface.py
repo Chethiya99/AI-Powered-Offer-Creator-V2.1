@@ -80,9 +80,9 @@ def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
             f"Merchant: {offer.get('merchants', [{}])[0].get('name', 'N/A')}, "
             f"Category: {offer.get('merchants', [{}])[0].get('category', 'N/A')}, "
             f"Expires: {offer.get('duration', {}).get('to', 'N/A')}, "
-            f"Budget: {offer.get('budget', 'N/A')}, "
+            f"Budget: {safe_float(offer.get('budget'))}, "
             f"Type: {offer.get('rewardType', 'N/A')}"
-            for offer in offers[:100]  # Limit to 100 offers for cost/performance
+            for offer in offers[:100]  # Limit to 100 offers
         ])
         
         response = client.chat.completions.create(
@@ -108,6 +108,15 @@ def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
     except Exception as e:
         st.error(f"LLM filtering error: {str(e)}")
         return offers
+
+def safe_float(value):
+    """Safely convert to float handling None and strings"""
+    if value is None:
+        return 0.0
+    try:
+        return float(str(value).replace(',', ''))
+    except ValueError:
+        return 0.0
 
 # --- UI Components ---
 def offer_card(offer: Dict):
@@ -150,12 +159,7 @@ def offer_card(offer: Dict):
 # --- Main UI ---
 st.set_page_config(page_title="Offer Management Dashboard", page_icon="🎯", layout="wide")
 
-# Get API keys
-if not st.secrets.get("OPENAI_API_KEY"):
-    st.error("OpenAI API key not configured")
-    st.stop()
-
-# Custom CSS for tabs
+# Custom CSS for styling
 st.markdown("""
 <style>
     .stTabs [data-baseweb="tab-list"] {
@@ -173,7 +177,9 @@ st.markdown("""
         margin-bottom: 1.5rem;
     }
     .wide-button {
-        width: 100% !important;
+        width: 100%;
+    }
+    .refresh-button {
         margin-top: 0.5rem;
     }
 </style>
@@ -292,16 +298,19 @@ with tab2:
                     st.warning("No offers loaded. Refresh first.")
         
         with search_cols[1]:
-            if st.button("Show All Offers", type="secondary", key="show_all"):
+            if st.button("Show All Offers", type="secondary"):
                 st.session_state.filtered_offers = None
         
         st.divider()
         
-        if st.button("🔄 Refresh All Offers", type="secondary", class_="wide-button"):
+        # Fixed refresh button with custom CSS class
+        st.markdown('<div class="refresh-button">', unsafe_allow_html=True)
+        if st.button("🔄 Refresh All Offers", type="secondary"):
             with st.spinner("Loading offers..."):
                 fetch_pending_offers()
                 st.session_state.filtered_offers = None
                 st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("**Quick Filters:**")
         if st.button("Expiring Soon (≤7 days)"):
@@ -314,7 +323,7 @@ with tab2:
         if st.button("High Value (>\\$50)"):
             st.session_state.filtered_offers = [
                 o for o in (st.session_state.pending_offers or []) 
-                if o.get('budget') and float(str(o['budget']).replace(',', '')) > 50
+                if safe_float(o.get('budget')) > 50
             ]
     
     with col2:
