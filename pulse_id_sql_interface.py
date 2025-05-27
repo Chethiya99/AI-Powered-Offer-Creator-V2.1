@@ -73,6 +73,9 @@ def fetch_pending_offers():
 
 def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
     """Use LLM to filter offers based on natural language prompt"""
+    if not prompt or not offers:
+        return []
+    
     try:
         client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
         
@@ -99,18 +102,36 @@ def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
                     - Understand categories (e.g., 'kids' = toys/baby items)
                     - Recognize dates in any format
                     - Handle currency values flexibly
+                    - If no offers match, return empty list
                     Return format: {{"matching_ids": [id1, id2, ...]}}"""
                 },
                 {"role": "user", "content": prompt},
             ],
             temperature=0.1,
+            response_format={"type": "json_object"}
         )
         
-        result = json.loads(response.choices[0].message.content)
-        return [offer for offer in offers if offer.get('id') in result.get('matching_ids', [])]
+        # Safely parse the response
+        try:
+            content = response.choices[0].message.content
+            if not content.strip():
+                return []
+            
+            result = json.loads(content)
+            matching_ids = result.get("matching_ids", [])
+            
+            if not matching_ids:
+                return []
+                
+            return [offer for offer in offers if offer.get('id') in matching_ids]
+            
+        except json.JSONDecodeError:
+            st.warning("The AI had trouble understanding your request. Please try a different search.")
+            return []
+            
     except Exception as e:
-        st.error(f"LLM filtering error: {str(e)}")
-        return offers
+        st.error(f"Search error: {str(e)}")
+        return []
 
 def safe_float(value):
     """Safely convert to float handling None and strings"""
@@ -182,6 +203,11 @@ st.markdown("""
     .wide-button {
         width: 100%;
     }
+    .no-offers {
+        text-align: center;
+        padding: 2rem;
+        color: #666;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -231,6 +257,7 @@ with tab1:
                             {"role": "user", "content": user_prompt},
                         ],
                         temperature=0.2,
+                        response_format={"type": "json_object"}
                     )
                     
                     content = response.choices[0].message.content
@@ -323,7 +350,7 @@ with tab2:
             ]
     
     with col2:
-        offers_to_display = st.session_state.filtered_offers or st.session_state.pending_offers
+        offers_to_display = st.session_state.filtered_offers if st.session_state.filtered_offers is not None else st.session_state.pending_offers
         
         if offers_to_display:
             st.subheader(f"📋 Offers ({len(offers_to_display)})")
@@ -343,4 +370,12 @@ with tab2:
             for offer in offers_to_display:
                 offer_card(offer)
         else:
-            st.info("No offers found. Please try a different search or refresh the page.")
+            if st.session_state.filtered_offers == []:
+                st.markdown("""
+                <div class="no-offers">
+                    <h3>🎈 No matching offers found</h3>
+                    <p>Try a different search or check back later</p>
+                </div>
+                """, unsafe_allow_html=True)
+            elif not st.session_state.pending_offers:
+                st.info("No offers available. Please refresh the page or check your connection.")
