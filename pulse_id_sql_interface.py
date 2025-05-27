@@ -23,6 +23,8 @@ if 'pending_offers' not in st.session_state:
     st.session_state.pending_offers = None
 if 'filtered_offers' not in st.session_state:
     st.session_state.filtered_offers = None
+if 'offers_loaded' not in st.session_state:
+    st.session_state.offers_loaded = False
 
 # --- Helper Functions ---
 def format_currency(amount):
@@ -63,6 +65,7 @@ def fetch_pending_offers():
         )
         offers = get_pending_offers(auth['permissionToken'], auth['authToken'])
         st.session_state.pending_offers = offers.get('offers', [])
+        st.session_state.offers_loaded = True
         return offers
     except Exception as e:
         st.error(f"Failed to fetch offers: {str(e)}")
@@ -86,7 +89,7 @@ def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
         ])
         
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "system",
@@ -141,7 +144,7 @@ def offer_card(offer: Dict):
     with st.container():
         cols = st.columns([1, 3])
         with cols[0]:
-            st.image(image_url, use_column_width=True)
+            st.image(image_url, use_container_width=True)
         with cols[1]:
             st.subheader(offer.get('title', 'Untitled Offer'))
             st.markdown(f"""
@@ -178,9 +181,6 @@ st.markdown("""
     }
     .wide-button {
         width: 100%;
-    }
-    .refresh-button {
-        margin-top: 0.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -274,6 +274,11 @@ with tab2:
     st.title("Smart Offer Explorer")
     st.caption("View, search, and analyze your offers using natural language")
     
+    # Load offers automatically when tab is accessed
+    if not st.session_state.offers_loaded:
+        with st.spinner("Loading offers..."):
+            fetch_pending_offers()
+    
     # Two-column layout
     col1, col2 = st.columns([1, 3], gap="large")
     
@@ -295,22 +300,13 @@ with tab2:
                             st.session_state.pending_offers
                         )
                 elif not st.session_state.pending_offers:
-                    st.warning("No offers loaded. Refresh first.")
+                    st.warning("No offers loaded. Please try again.")
         
         with search_cols[1]:
             if st.button("Show All Offers", type="secondary"):
                 st.session_state.filtered_offers = None
         
         st.divider()
-        
-        # Fixed refresh button with custom CSS class
-        st.markdown('<div class="refresh-button">', unsafe_allow_html=True)
-        if st.button("🔄 Refresh All Offers", type="secondary"):
-            with st.spinner("Loading offers..."):
-                fetch_pending_offers()
-                st.session_state.filtered_offers = None
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("**Quick Filters:**")
         if st.button("Expiring Soon (≤7 days)"):
@@ -347,4 +343,4 @@ with tab2:
             for offer in offers_to_display:
                 offer_card(offer)
         else:
-            st.info("No offers found. Refresh offers or try a different search.")
+            st.info("No offers found. Please try a different search or refresh the page.")
