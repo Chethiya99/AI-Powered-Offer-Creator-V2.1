@@ -1,381 +1,573 @@
-import streamlit as st
-import openai
-import json
+__import__('pysqlite3')
+import sys
+import os
+import sqlite3
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
+import base64
+import csv
+import io
+
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import re
-from datetime import datetime, timedelta
-import requests
-from typing import List, Dict
+import pandas as pd
+import streamlit as st
+from langchain_community.utilities import SQLDatabase
+from langchain_community.agent_toolkits import create_sql_agent
+from langchain_groq import ChatGroq
+from langchain.agents import AgentType
+from langchain_community.llms import Ollama
+from crewai import Agent, Task, Crew, Process, LLM
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 
-# --- Initialize Session State ---
-if 'offer_params' not in st.session_state:
-    st.session_state.offer_params = None
-if 'offer_created' not in st.session_state:
-    st.session_state.offer_created = False
-if 'adjusted_params' not in st.session_state:
-    st.session_state.adjusted_params = None
-if 'lms_credentials' not in st.session_state:
-    st.session_state.lms_credentials = {
-        'email': st.secrets.get("LMS_EMAIL", ""),
-        'password': st.secrets.get("LMS_PASSWORD", ""),
-        'app': 'lms'
-    }
-if 'pending_offers' not in st.session_state:
-    st.session_state.pending_offers = None
-if 'filtered_offers' not in st.session_state:
-    st.session_state.filtered_offers = None
-if 'offers_loaded' not in st.session_state:
-    st.session_state.offers_loaded = False
-
-# --- Helper Functions ---
-def format_currency(amount):
-    return f"\\${amount:.2f}"  # Escaped for Markdown
-
-def authenticate_user(email: str, password: str, app: str):
-    url = 'https://lmsdev.pulseid.com/1.0/auth/login-v2'
-    headers = {'Content-Type': 'application/json'}
-    payload = {'email': email, 'password': password, 'app': app}
-    response = requests.post(url, headers=headers, json=payload)
-    if not response.ok:
-        raise Exception('Authentication failed')
-    auth_data = response.json()
-    return {
-        'permissionToken': auth_data['data']['auth'][0]['permissionToken'],
-        'authToken': auth_data['data']['auth'][0]['authToken']
-    }
-
-def get_pending_offers(permission_token: str, auth_token: str):
-    url = 'https://lmsdev-marketplace-api.pulseid.com/offer/pending-review'
-    headers = {
-        'x-pulse-current-client': '315',
-        'x-pulse-token': permission_token,
-        'Authorization': f'Bearer {auth_token}',
-        'Content-Type': 'application/json'
-    }
-    response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        raise Exception('Failed to retrieve offers')
-    return response.json()
-
-def fetch_pending_offers():
-    try:
-        auth = authenticate_user(
-            email=st.session_state.lms_credentials['email'],
-            password=st.session_state.lms_credentials['password'],
-            app=st.session_state.lms_credentials['app']
-        )
-        offers = get_pending_offers(auth['permissionToken'], auth['authToken'])
-        st.session_state.pending_offers = offers.get('offers', [])
-        st.session_state.offers_loaded = True
-        return offers
-    except Exception as e:
-        st.error(f"Failed to fetch offers: {str(e)}")
-        return None
-
-def filter_offers_with_llm(prompt: str, offers: List[Dict]) -> List[Dict]:
-    """Use LLM to filter offers based on natural language prompt"""
-    if not prompt or not offers:
-        return []
+# Load configuration from secrets.toml
+try:
+    # Amazon WorkMail Configuration from secrets
+    WORKMAIL_SMTP_SERVER = st.secrets["workmail"]["SMTP_SERVER"]
+    WORKMAIL_SMTP_PORT = st.secrets["workmail"]["SMTP_PORT"]
+    WORKMAIL_USERNAME = st.secrets["workmail"]["USERNAME"]
+    WORKMAIL_PASSWORD = st.secrets["workmail"]["PASSWORD"]
     
-    try:
-        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+    # Groq API Key from secrets
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+except KeyError as e:
+    st.error(f"Missing configuration in secrets.toml: {str(e)}")
+    st.stop()
+
+# Page Configuration
+st.set_page_config(
+    page_title="Pulse iD - Database Query & Email Generator",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Initialize session state
+if 'db' not in st.session_state:
+    st.session_state.db = None
+if 'agent_executor' not in st.session_state:
+    st.session_state.agent_executor = None
+if 'merchant_data' not in st.session_state:
+    st.session_state.merchant_data = None
+if 'raw_output' not in st.session_state:
+    st.session_state.raw_output = ""
+if 'extraction_results' not in st.session_state:
+    st.session_state.extraction_results = None
+if 'email_results' not in st.session_state:
+    st.session_state.email_results = None
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = GROQ_API_KEY  # Use the API key from secrets
+if 'interaction_history' not in st.session_state:
+    st.session_state.interaction_history = []  # Store all interactions (queries, results, emails)
+if 'selected_db' not in st.session_state:
+    st.session_state.selected_db = "merchant_data_japan.db"  # Default database
+if 'db_initialized' not in st.session_state:
+    st.session_state.db_initialized = False  # Track if the database is initialized
+if 'selected_template' not in st.session_state:
+    st.session_state.selected_template = "email_task_description1.txt"  # Default template
+if 'trigger_rerun' not in st.session_state:
+    st.session_state.trigger_rerun = False  # Track if a re-run is needed
+if 'custom_template_content' not in st.session_state:
+    # Initialize with default template content
+    default_template_path = "email_descriptions/email_task_description1.txt"
+    if os.path.exists(default_template_path):
+        with open(default_template_path, 'r') as file:
+            st.session_state.custom_template_content = file.read()
+    else:
+        st.session_state.custom_template_content = """Generate a personalized email for the merchant with the following details:
         
-        # Prepare offers data for LLM
-        offers_str = "\n".join([
-            f"ID: {offer.get('id')}, "
-            f"Title: {offer.get('title')}, "
-            f"Merchant: {offer.get('merchants', [{}])[0].get('name', 'N/A')}, "
-            f"Category: {offer.get('merchants', [{}])[0].get('category', 'N/A')}, "
-            f"Expires: {offer.get('duration', {}).get('to', 'N/A')}, "
-            f"Budget: {safe_float(offer.get('budget'))}, "
-            f"Type: {offer.get('rewardType', 'N/A')}"
-            for offer in offers[:100]  # Limit to 100 offers
-        ])
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"""Analyze these offers and return ONLY a JSON list of offer IDs that match the user's query.
-                    Available offers:\n{offers_str}\n
-                    Important:
-                    - Understand categories (e.g., 'kids' = toys/baby items)
-                    - Recognize dates in any format
-                    - Handle currency values flexibly
-                    - If no offers match, return empty list
-                    Return format: {{"matching_ids": [id1, id2, ...]}}"""
-                },
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.1,
-            response_format={"type": "json_object"}
+Merchant Name: {merchant_data['name']}
+Email: {merchant_data['email']}
+Business Type: {merchant_data['business_type']}
+
+The email should be in this exact format:
+Merchant Name: [Merchant Name]
+To: [Recipient Email]
+From: [Your Email]
+Subject: [Email Subject]
+Body: [Email Body - 300 words professional email]
+
+The email should:
+1. Be professional yet friendly
+2. Mention potential collaboration opportunities
+3. Be around 300 words
+4. Include a compelling subject line
+5. Format all links as HTML <a> tags (e.g., <a href='https://example.com'>Example</a>)"""
+if 'email_dataframe' not in st.session_state:
+    st.session_state.email_dataframe = pd.DataFrame(columns=['id', 'Merchant_Name', 'To', 'From', 'Subject', 'Body'])
+
+# Function to encode image to base64
+def image_to_base64(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+# Function to create email with embedded QR code
+def create_email_with_qr(receiver_email, subject, body_text, qr_image_path="qr.png"):
+    msg = MIMEMultipart('related')
+    msg['From'] = WORKMAIL_USERNAME
+    msg['To'] = receiver_email
+    msg['Subject'] = subject
+    
+    # Convert the body text to HTML if it's not already
+    if not body_text.startswith('<html>'):
+        # Convert plain text links to HTML links
+        body_text = re.sub(
+            r'(https?://\S+)',
+            r'<a href="\1">\1</a>',
+            body_text
         )
+        # Convert newlines to <br> tags
+        body_text = body_text.replace('\n', '<br>')
         
-        # Safely parse the response
-        try:
-            content = response.choices[0].message.content
-            if not content.strip():
-                return []
-            
-            result = json.loads(content)
-            matching_ids = result.get("matching_ids", [])
-            
-            if not matching_ids:
-                return []
-                
-            return [offer for offer in offers if offer.get('id') in matching_ids]
-            
-        except json.JSONDecodeError:
-            st.warning("The AI had trouble understanding your request. Please try a different search.")
-            return []
-            
-    except Exception as e:
-        st.error(f"Search error: {str(e)}")
-        return []
+        html = f"""
+        <html>
+            <body>
+                {body_text}
+            </body>
+        </html>
+        """
+    else:
+        html = body_text
+    
+    msg.attach(MIMEText(html, 'html'))
+    return msg
 
-def safe_float(value):
-    """Safely convert to float handling None and strings"""
-    if value is None:
-        return 0.0
+# Function to read the email task description from a text file
+def read_email_task_description(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as file:
+            content = file.read()
+            st.session_state.custom_template_content = content  # Update with file content
+            return content
+    else:
+        raise FileNotFoundError(f"The file {file_path} does not exist.")
+
+# Function to send email using Amazon WorkMail
+def send_email_workmail(receiver_email, subject, body_text, qr_image_path="qr.png"):
     try:
-        return float(str(value).replace(',', ''))
-    except ValueError:
-        return 0.0
+        # Create the email with embedded QR code
+        msg = create_email_with_qr(receiver_email, subject, body_text, qr_image_path)
+        
+        # Connect to the Amazon WorkMail SMTP server and send
+        with smtplib.SMTP_SSL(WORKMAIL_SMTP_SERVER, WORKMAIL_SMTP_PORT) as server:
+            server.login(WORKMAIL_USERNAME, WORKMAIL_PASSWORD)
+            server.sendmail(WORKMAIL_USERNAME, receiver_email, msg.as_string())
 
-# --- UI Components ---
-def offer_card(offer: Dict):
-    merchant = offer.get('merchants', [{}])[0]
-    image_url = (
-        offer.get('offerLogo') or 
-        merchant.get('profilePicture') or 
-        merchant.get('categoryLogo') or 
-        "https://via.placeholder.com/150?text=No+Image"
+        return True
+
+    except Exception as e:
+        st.error(f"Error sending email: {str(e)}")
+        return False
+
+# Function to store sent email data in the database
+def store_sent_email(merchant_id, email, sent_time):
+    try:
+        conn = sqlite3.connect('sent_emails.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sent_emails (
+                merchantID TEXT,
+                email TEXT,
+                sent_time DATETIME
+            )
+        ''')
+        cursor.execute('''
+            INSERT INTO sent_emails (merchantID, email, sent_time)
+            VALUES (?, ?, ?)
+        ''', (merchant_id, email, sent_time))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error storing email data: {str(e)}")
+        return False
+
+# Function to convert plain text links to HTML links
+def convert_links_to_html(text):
+    # Convert URLs to HTML links
+    text = re.sub(
+        r'(https?://\S+)',
+        r'<a href="\1">\1</a>',
+        text
     )
+    return text
+
+# Function to parse email components from structured format
+def parse_email_components(email_text):
+    components = {
+        'Merchant_Name': '',
+        'To': '',
+        'From': '',
+        'Subject': '',
+        'Body': ''
+    }
     
-    # Calculate days until expiration
-    expiry_date = offer.get('duration', {}).get('to')
-    days_left = "N/A"
-    if expiry_date and expiry_date != "No end date":
-        try:
-            expiry = datetime.strptime(expiry_date, "%Y-%m-%d %H:%M")
-            days_left = max(0, (expiry - datetime.now()).days)
-        except ValueError:
-            days_left = "N/A"
+    # Extract Merchant Name
+    merchant_match = re.search(r"Merchant Name:\s*(.*?)(?=\nTo:|$)", email_text, re.IGNORECASE)
+    if merchant_match:
+        components['Merchant_Name'] = merchant_match.group(1).strip()
     
-    with st.container():
-        cols = st.columns([1, 3])
-        with cols[0]:
-            st.image(image_url, use_container_width=True)
-        with cols[1]:
-            st.subheader(offer.get('title', 'Untitled Offer'))
-            st.markdown(f"""
-            **Merchant:** {merchant.get('name', 'N/A')}  
-            **Category:** {merchant.get('category', 'N/A')}  
-            **Value:** {offer.get('currency', {}).get('symbol', '\\$')}{offer.get('budget', 'N/A')}  
-            **Expires in:** {days_left} days  
-            **Status:** {offer.get('status', 'N/A').replace('-', ' ').title()}
-            """)
-            
-            if st.button("View Details", key=f"details_{offer.get('id')}"):
-                st.json(offer)
-        st.divider()
-
-# --- Main UI ---
-st.set_page_config(page_title="Offer Management Dashboard", page_icon="🎯", layout="wide")
-
-# Custom CSS for styling
-st.markdown("""
-<style>
-    .stTabs [data-baseweb="tab-list"] {
-        justify-content: center;
-    }
-    .stTabs [data-baseweb="tab"] {
-        padding: 1rem 2rem;
-        font-size: 1.1rem;
-        font-weight: 600;
-    }
-    .offer-card {
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-    }
-    .wide-button {
-        width: 100%;
-    }
-    .no-offers {
-        text-align: center;
-        padding: 2rem;
-        color: #666;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Main tabs
-tab1, tab2 = st.tabs(["✨ Create Offer", "📋 View Offers"])
-
-with tab1:
-    st.title("AI-Powered Offer Creation")
-    col1, col2 = st.columns([1, 1], gap="large")
+    # Extract To
+    to_match = re.search(r"To:\s*(.*?)(?=\nFrom:|$)", email_text, re.IGNORECASE)
+    if to_match:
+        components['To'] = to_match.group(1).strip()  # Hardcoded recipient
     
-    with col1:
-        user_prompt = st.text_area(
-            "Describe your offer:",
-            height=150,
-            placeholder="E.g., 'Give \\$20 cashback for first 10 customers spending \\$500+ valid for 7 days' "
-                        "or 'Maybe a 15% discount on baby items worth \\$100, limited to first 50 customers until Oct 1 2025'",
-            help="The AI understands complex descriptions with dates, amounts, and limits"
+    # Extract From
+    from_match = re.search(r"From:\s*(.*?)(?=\nSubject:|$)", email_text, re.IGNORECASE)
+    if from_match:
+        components['From'] = from_match.group(1).strip()
+    
+    # Extract Subject
+    subject_match = re.search(r"Subject:\s*(.*?)(?=\nBody:|$)", email_text, re.IGNORECASE)
+    if subject_match:
+        components['Subject'] = subject_match.group(1).strip()
+    
+    # Extract Body
+    body_match = re.search(r"Body:\s*(.*)", email_text, re.IGNORECASE | re.DOTALL)
+    if body_match:
+        body_text = body_match.group(1).strip()
+        # Convert links in the body to HTML format
+        components['Body'] = convert_links_to_html(body_text)
+    
+    return components
+
+# Function to update the email dataframe
+def update_email_dataframe(email_text, email_id):
+    components = parse_email_components(email_text)
+    
+    new_row = {
+        'id': email_id,
+        'Merchant_Name': components['Merchant_Name'],
+        'To': components['To'],
+        'From': components['From'],
+        'Subject': components['Subject'],
+        'Body': components['Body']
+    }
+    
+    # Convert new_row to a DataFrame and concatenate with the existing one
+    new_df = pd.DataFrame([new_row])
+    st.session_state.email_dataframe = pd.concat([st.session_state.email_dataframe, new_df], ignore_index=True)
+
+# Header Section with Title and Logo
+st.image("logo.png", width=150)  # Ensure you have your logo in the working directory
+st.markdown(
+    "<h1 style='text-align: center; color: #4CAF50;'>📊 PulseID Merchant Scout Agent</h1>",
+    unsafe_allow_html=True
+)
+st.markdown(
+    "<h4 style='text-align: center; color: #555;'>Interact with your merchant database and generate emails with ease!</h4>",
+    unsafe_allow_html=True
+)
+
+# Sidebar Configuration
+st.sidebar.header("Settings")
+
+# QR Code Preview
+st.sidebar.markdown("### QR Code Preview")
+try:
+    qr_base64 = image_to_base64("qr.png")
+    st.sidebar.image(f"data:image/png;base64,{qr_base64}", caption="Company QR Code", width=150)
+except FileNotFoundError:
+    st.sidebar.warning("QR code image (qr.png) not found")
+
+# Database Selection
+db_options = ["merchant_data_japan.db"]
+new_selected_db = st.sidebar.selectbox("Select Database:", db_options, index=db_options.index(st.session_state.selected_db))
+
+# Check if the database selection has changed
+if new_selected_db != st.session_state.selected_db:
+    st.session_state.selected_db = new_selected_db
+    st.session_state.db_initialized = False  # Reset database initialization
+    st.sidebar.success(f"✅ Switched to database: {st.session_state.selected_db}")
+
+# Model Selection
+model_name = st.sidebar.selectbox("Select Model:", ["llama3-70b-8192"])
+
+# Email Template Selection
+template_options = ["email_task_description1.txt", "email_task_description2.txt", "email_task_description3.txt"]
+new_selected_template = st.sidebar.selectbox("Select Email Prompt:", template_options, index=template_options.index(st.session_state.selected_template))
+
+# Check if template selection has changed
+if new_selected_template != st.session_state.selected_template:
+    st.session_state.selected_template = new_selected_template
+    # Read the new template content
+    description_file_path = f"email_descriptions/{st.session_state.selected_template}"
+    read_email_task_description(description_file_path)
+    st.sidebar.success(f"✅ Selected Prompt: {st.session_state.selected_template}")
+
+# Initialize SQL Database and Agent
+if st.session_state.selected_db and not st.session_state.db_initialized:
+    try:
+        # Initialize Groq LLM
+        llm = ChatGroq(
+            temperature=0,
+            model_name=model_name,
+            api_key=st.session_state.api_key
         )
-        
-        if st.button("Generate Offer", type="primary"):
-            with st.spinner("Creating your offer..."):
+
+        # Initialize SQLDatabase
+        st.session_state.db = SQLDatabase.from_uri(f"sqlite:///{st.session_state.selected_db}", sample_rows_in_table_info=3)
+
+        # Create SQL Agent
+        st.session_state.agent_executor = create_sql_agent(
+            llm=llm,
+            db=st.session_state.db,
+            agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+            verbose=True
+        )
+        st.session_state.db_initialized = True  # Mark database as initialized
+        st.sidebar.success("✅ Database and LLM Connected Successfully!")
+    except Exception as e:
+        st.sidebar.error(f"Error: {str(e)}")
+
+# Custom Template Editor at the top of the main content
+st.markdown("### Email Prompt Editor", unsafe_allow_html=True)
+st.info("Edit the email prompt below. Your changes will be used when generating emails.")
+
+# Text area for editing the template content
+custom_template = st.text_area(
+    "Edit Email Prompt:",
+    value=st.session_state.custom_template_content,
+    height=300,
+    key="custom_template_editor"
+)
+
+# Update button for the template
+if st.button("Update Template"):
+    st.session_state.custom_template_content = custom_template
+    st.success("✅ Template updated successfully!")
+
+# Function to check if extraction results contain merchant data
+def has_merchant_data(extraction_results):
+    if not extraction_results:
+        return False
+    
+    # Convert to string if it's not already
+    results_str = str(extraction_results)
+    
+    # Check for common patterns that indicate merchant data
+    patterns = [
+        r'merchant.*name',
+        r'email.*@',
+        r'business.*type',
+        r'cuisine.*type',
+        r'review',
+        r'rating'
+    ]
+    
+    # If any pattern matches, consider it as having merchant data
+    for pattern in patterns:
+        if re.search(pattern, results_str, re.IGNORECASE):
+            return True
+    
+    return False
+
+# Function to render the "Enter Query" section
+def render_query_section():
+    st.markdown("#### Get to know the Merchant Target List:", unsafe_allow_html=True)
+    
+    # Text area for user input
+    user_query = st.text_area("Enter your query:", placeholder="E.g., Give first three merchant names and their emails, ratings, cuisine type and reviews.", key=f"query_{len(st.session_state.interaction_history)}", value=st.session_state.get('user_query', ''))
+    
+    if st.button("Run Query", key=f"run_query_{len(st.session_state.interaction_history)}"):
+        if user_query:
+            with st.spinner("Running query..."):
                 try:
-                    client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-                    response = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": """Extract offer details from user description with high accuracy:
-                                - Recognize dollar amounts (\\$20 or 20 dollars)
-                                - Understand percentages (15% or 15 percent)
-                                - Parse dates in any format (Oct 1 2025, 10/01/25, etc.)
-                                - Identify target audiences (babies, kids, students)
-                                Return JSON with:
-                                {
-                                    "offer_type": "cashback/discount/free_shipping",
-                                    "value": 20 (or 15 for %),
-                                    "value_type": "fixed/percentage",
-                                    "min_spend": 100,
-                                    "duration_days": (calculated from end date),
-                                    "offer_name": "Creative Name Based on Details",
-                                    "max_redemptions": 50,
-                                    "target_audience": "babies/kids/etc",
-                                    "description": "Generated marketing text"
-                                }"""
-                            },
-                            {"role": "user", "content": user_prompt},
-                        ],
-                        temperature=0.2,
-                        response_format={"type": "json_object"}
+                    # Define company details and agent role
+                    company_details = """
+                     If possible, Please always try to give answers in a table format or point wise.
+                    """
+
+                    # Prepend company details to the user's query
+                    full_query = f"{company_details}\n\nUser Query: {user_query}"
+
+                    # Execute the query using the agent
+                    result = st.session_state.agent_executor.invoke(full_query)
+                    st.session_state.raw_output = result['output'] if isinstance(result, dict) else result
+                    
+                    # Process raw output using an extraction agent 
+                    extractor_llm = LLM(model="groq/llama-3.3-70b-versatile", api_key=st.session_state.api_key)
+                    extractor_agent = Agent(
+                        role="Data Extractor",
+                        goal="Extract merchants, emails, reviews and anything posible from the raw output if they are only available.",
+                        backstory="You are an expert in extracting structured information from text.",
+                        provider="Groq",
+                        llm=extractor_llm 
                     )
                     
-                    content = response.choices[0].message.content
-                    content = re.sub(r'```json\n?(.*?)\n?```', r'\1', content, flags=re.DOTALL)
-                    st.session_state.offer_params = json.loads(content)
-                    st.session_state.adjusted_params = st.session_state.offer_params.copy()
-                    st.session_state.offer_created = True
-                    st.rerun()
+                    extract_task = Task(
+                        description=f"Extract a list of 'merchants' and their 'emails', 'reviews' from the following text:\n\n{st.session_state.raw_output}",
+                        agent=extractor_agent,
+                        expected_output="if available, Please return A structured list of merchant names, their associated email addresses, reviews etc extracted from the given text"
+                    )
+                    
+                    # Crew execution for extraction 
+                    extraction_crew = Crew(agents=[extractor_agent], tasks=[extract_task], process=Process.sequential)
+                    extraction_results = extraction_crew.kickoff()
+                    
+                    # Check if we have enough merchant data to proceed
+                    if has_merchant_data(extraction_results):
+                        st.session_state.extraction_results = extraction_results
+                        st.session_state.merchant_data = st.session_state.extraction_results
+                        
+                        # Append the query and results to the interaction history
+                        st.session_state.interaction_history.append({
+                            "type": "query",
+                            "content": {
+                                "query": user_query,
+                                "raw_output": st.session_state.raw_output,
+                                "extraction_results": st.session_state.extraction_results
+                            }
+                        })
+                        
+                        # Trigger a re-run to update the UI
+                        st.session_state.trigger_rerun = True
+                    else:
+                        st.warning("⚠️ No enough merchant data found to proceed. Please refine your query to include merchant names, emails, and other relevant details.")
                 except Exception as e:
-                    st.error(f"Error generating offer: {str(e)}")
-    
-    with col2:
-        if st.session_state.offer_created and st.session_state.adjusted_params:
-            params = st.session_state.adjusted_params
-            st.subheader("🎯 Offer Preview")
-            
-            # Handle both fixed end dates and duration_days
-            if 'end_date' in params:
-                end_date = datetime.strptime(params['end_date'], "%Y-%m-%d")
-            else:
-                end_date = datetime.now() + timedelta(days=params.get("duration_days", 7))
-            
-            value_display = f"{params['value']}%" if params.get("value_type") == "percentage" else format_currency(params['value'])
-            
-            with st.container():
-                st.markdown(f"""
-                **✨ {params.get('offer_name', 'Special Offer')}**  
-                💵 **{value_display}** {params.get('offer_type', 'offer').replace('_', ' ').title()}  
-                🛒 Min. spend: **{format_currency(params.get('min_spend', 0))}**  
-                ⏳ Valid until: **{end_date.strftime('%b %d, %Y')}**  
-                👥 Max redemptions: **{params.get('max_redemptions', 'Unlimited')}**  
-                🎯 Audience: **{params.get('target_audience', 'All customers').title()}**
-                """)
-                
-                if st.button("Publish Offer", type="primary"):
-                    with st.spinner("Publishing..."):
-                        # Add your publish logic here
-                        st.success("Offer published successfully!")
-
-with tab2:
-    st.title("Smart Offer Explorer")
-    st.caption("View, search, and analyze your offers using natural language")
-    
-    # Load offers automatically when tab is accessed
-    if not st.session_state.offers_loaded:
-        with st.spinner("Loading offers..."):
-            fetch_pending_offers()
-    
-    # Two-column layout
-    col1, col2 = st.columns([1, 3], gap="large")
-    
-    with col1:
-        st.subheader("🔍 Smart Search")
-        search_query = st.text_input(
-            "Ask about offers:",
-            placeholder="E.g., 'Show food offers expiring soon', 'Find kids-related deals under \\$30'",
-            help="The AI understands categories, prices, and dates in natural language"
-        )
-        
-        search_cols = st.columns([1, 1])
-        with search_cols[0]:
-            if st.button("Search Offers", type="primary"):
-                if st.session_state.pending_offers and search_query:
-                    with st.spinner("Analyzing offers..."):
-                        st.session_state.filtered_offers = filter_offers_with_llm(
-                            search_query, 
-                            st.session_state.pending_offers
-                        )
-                elif not st.session_state.pending_offers:
-                    st.warning("No offers loaded. Please try again.")
-        
-        with search_cols[1]:
-            if st.button("Show All Offers", type="secondary"):
-                st.session_state.filtered_offers = None
-        
-        st.divider()
-        
-        st.markdown("**Quick Filters:**")
-        if st.button("Expiring Soon (≤7 days)"):
-            st.session_state.filtered_offers = [
-                o for o in (st.session_state.pending_offers or []) 
-                if o.get('duration', {}).get('to') and 
-                (datetime.strptime(o['duration']['to'], "%Y-%m-%d %H:%M") - datetime.now()).days <= 7
-            ]
-        
-        if st.button("High Value (>\\$50)"):
-            st.session_state.filtered_offers = [
-                o for o in (st.session_state.pending_offers or []) 
-                if safe_float(o.get('budget')) > 50
-            ]
-    
-    with col2:
-        offers_to_display = st.session_state.filtered_offers if st.session_state.filtered_offers is not None else st.session_state.pending_offers
-        
-        if offers_to_display:
-            st.subheader(f"📋 Offers ({len(offers_to_display)})")
-            
-            # Improved sorting with proper error handling
-            def get_sort_key(offer):
-                expiry_date = offer.get('duration', {}).get('to')
-                try:
-                    if expiry_date and expiry_date != "No end date":
-                        return datetime.strptime(expiry_date, "%Y-%m-%d %H:%M")
-                    return datetime.max  # Far future date for offers with no expiry
-                except ValueError:
-                    return datetime.max  # Fallback for invalid dates
-            
-            offers_to_display.sort(key=get_sort_key)
-            
-            for offer in offers_to_display:
-                offer_card(offer)
+                    st.error(f"Error executing query: {str(e)}")
         else:
-            if st.session_state.filtered_offers == []:
-                st.markdown("""
-                <div class="no-offers">
-                    <h3>🎈 No matching offers found</h3>
-                    <p>Try a different search or check back later</p>
-                </div>
-                """, unsafe_allow_html=True)
-            elif not st.session_state.pending_offers:
-                st.info("No offers available. Please refresh the page or check your connection.")
+            st.warning("⚠️ Please enter a query before clicking 'Run Query'.")
+
+# Display Interaction History
+if st.session_state.interaction_history:
+    st.markdown("### Interaction History:", unsafe_allow_html=True)
+    for idx, interaction in enumerate(st.session_state.interaction_history):
+        if interaction["type"] == "query":
+            st.markdown(f"#### Query: {interaction['content']['query']}")
+            st.markdown("**Raw Output:**")
+            st.write(interaction['content']['raw_output'])
+            
+            # Only display extracted merchants if there is data and it does not contain ''
+            if interaction['content']['extraction_results'] and interaction['content']['extraction_results'].raw and 'errorhappened' not in interaction['content']['extraction_results'].raw:
+                
+                # Show the "Generate Emails" button for this specific interaction
+                if st.button(f"Generate Emails For Above Extracted Merchants", key=f"generate_emails_{idx}"):
+                    with st.spinner("Generating emails..."):
+                        try:
+                            # Define email generation agent 
+                            llm_email = LLM(model="groq/llama-3.3-70b-versatile", api_key=st.session_state.api_key)
+                            email_agent = Agent(
+                                role="Assume yourself as a lead Marketing Lead, with years of experiences working for leading merchant sourcing and acquiring companies such as wirecard, cardlytics, fave that has helped to connect with small to medium merchants to source an offer. Generate a personalized email for merchants with a compelling and curiosity-piquing subject line that feels authentic and human-crafted, ensuring the recipient does not perceive it as spam or automated",
+                                goal="Generate personalized marketing emails for merchants.Each email should contains at least 300 words",
+                                backstory="You are a marketing expert named 'Rasika Galhena' of Pulse iD fintech company skilled in crafting professional and engaging emails for merchants.",
+                                verbose=True,
+                                allow_delegation=False,
+                                llm=llm_email 
+                            )
+
+                            # Use the custom template content from the editor
+                            email_task_description = st.session_state.custom_template_content
+
+                            # Email generation task using extracted results 
+                            task = Task(
+                                description=email_task_description.format(merchant_data=interaction['content']['extraction_results'].raw),
+                                agent=email_agent,
+                                expected_output="Marketing emails for each selected merchant, tailored to their business details. Each email must be in this exact format:\n\nMerchant Name: [Merchant Name]\nTo: [Recipient Email]\nFrom: [Your Email]\nSubject: [Email Subject]\nBody: [Email Body - 300 words professional email with HTML links]\n\n---\n\n[Next Email]"
+                            )
+
+                            # Crew execution 
+                            crew = Crew(agents=[email_agent], tasks=[task], process=Process.sequential)
+                            email_results = crew.kickoff()
+                            
+                            # Display results 
+                            if email_results.raw:
+                                # Split the email results into individual emails (assuming emails are separated by a delimiter like "---")
+                                individual_emails = email_results.raw.split("---")
+                                
+                                # Store each email separately in the interaction history
+                                for i, email_text in enumerate(individual_emails):
+                                    if email_text.strip():  # Skip empty emails
+                                        # Append the generated email to the interaction history
+                                        st.session_state.interaction_history.append({
+                                            "type": "email",
+                                            "content": email_text,
+                                            "index": len(st.session_state.interaction_history)  # Unique index for each email
+                                        })
+                                        
+                                        # Update the email dataframe
+                                        update_email_dataframe(email_text, len(st.session_state.interaction_history))
+                                
+                                # Trigger a re-run to update the UI
+                                st.session_state.trigger_rerun = True
+                            else:
+                                st.warning("No emails could be generated from the available data.")
+
+                        except Exception as e:
+                            st.error(f"Error generating emails: {str(e)}")
+        
+        elif interaction["type"] == "email":
+            st.markdown("#### Generated Email:")
+            
+            # Display the structured email content with HTML rendering for the body
+            components = parse_email_components(interaction['content'])
+            
+            st.text(f"Merchant Name: {components['Merchant_Name']}")
+            st.text(f"To: {components['To']}")
+            st.text(f"From: {components['From']}")
+            st.text(f"Subject: {components['Subject']}")
+            st.markdown("**Body:**", unsafe_allow_html=True)
+            st.markdown(components['Body'], unsafe_allow_html=True)
+            
+            # Add a "Send" button for each email
+            if st.button(f"Send Email {interaction['index']}", key=f"send_email_{interaction['index']}"):
+                with st.spinner("Sending email..."):
+                    try:
+                        # Send the email using Amazon WorkMail
+                        if send_email_workmail(components['To'], components['Subject'], components['Body']):
+                            # Store the sent email data in the database
+                            sent_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            if store_sent_email(components['Merchant_Name'], components['To'], sent_time):
+                                st.success(f"✅ Email sent to {components['To']} and stored in the database.")
+                            else:
+                                st.error("Failed to store email data in the database.")
+                        else:
+                            st.error("Failed to send email.")
+                    except Exception as e:
+                        st.error(f"Error sending email: {str(e)}")
+        
+        st.markdown("---")
+
+# CSV Download Section
+if not st.session_state.email_dataframe.empty:
+    st.markdown("### Generated Emails CSV Export")
+    
+    # Display the dataframe with HTML rendering for the body
+    display_df = st.session_state.email_dataframe.copy()
+    display_df['Body'] = display_df['Body'].apply(lambda x: x.replace('\n', '<br>') if isinstance(x, str) else x)
+    st.write(display_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    
+    # Create a download link for the CSV
+    def convert_df_to_csv(df):
+        output = io.StringIO()
+        # Ensure HTML tags are preserved in the CSV
+        df.to_csv(output, index=False, quoting=csv.QUOTE_NONNUMERIC, escapechar='\\')
+        return output.getvalue()
+    
+    csv = convert_df_to_csv(st.session_state.email_dataframe)
+    st.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name="generated_emails.csv",
+        mime="text/csv"
+    )
+
+# Always render the "Ask questions about your database" section
+render_query_section()
+
+# Trigger a re-run if needed
+if st.session_state.trigger_rerun:
+    st.session_state.trigger_rerun = False  # Reset the trigger
+    st.rerun()  # Force a re-run of the script
+
+# Footer Section 
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; font-size: 14px;'>Powered by <strong>Pulse iD</strong> | Built with 🐍 Python and Streamlit</div>",
+    unsafe_allow_html=True 
+)
