@@ -167,7 +167,7 @@ def offer_card(offer: Dict):
     with st.container():
         cols = st.columns([1, 3])
         with cols[0]:
-            st.image(image_url, use_column_width=True)
+            st.image(image_url, use_container_width=True)
         with cols[1]:
             st.subheader(offer.get('title', 'Untitled Offer'))
             st.markdown(f"""
