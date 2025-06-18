@@ -230,8 +230,8 @@ with tab1:
         user_prompt = st.text_area(
             "Describe your offer:",
             height=150,
-            placeholder="E.g., 'Give \$20 bro cashback for first 10 customers spending \$500+ valid for 7 days' "
-                        "or 'Maybe a 15% discount on baby items worth \$100, limited to first 50 customers until Oct 1 2025'",
+            placeholder="E.g., 'Give $20 cashback for first 10 customers spending $500+ valid for 7 days' "
+                        "or 'Maybe a 15% discount on baby items worth $100, limited to first 50 customers until Oct 1 2025'",
             help="The AI understands complex descriptions with dates, amounts, and limits"
         )
         
